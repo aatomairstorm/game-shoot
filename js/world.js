@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { addBox, addRamp } from './collision.js';
 
 export const ZONES = {
@@ -6,6 +7,17 @@ export const ZONES = {
   B: { pos: new THREE.Vector3(55, 22, -50), label: 'B', name: 'Torre' },
 };
 export const PLAYER_SPAWN = new THREE.Vector3(0, 0, 16);
+
+// Automatic turrets: x, y (surface height), z
+export const TURRET_SPOTS = [
+  [-66, 6.45, 46], [-55, 0, 25], [60.5, 22, -50], [61, 11, -35], [24, 16, -29],
+  [-41, 18, -5], [-13, 26, 23], [0, 20, -112], [112, 18, 40], [30, 0, -78],
+];
+// Red explosive barrels
+export const BARREL_SPOTS = [
+  [-48, 42], [-68, 33], [-44, 36.5], [48, -66], [42, -56], [14, -8.4], [-12, 30], [64.6, 41],
+  [30, -10], [0, -98], [100, -88], [110, 62], [-100, 2], [-60, 108], [40, 100], [-8, -66],
+];
 
 function seeded(seed) {
   let s = seed;
@@ -74,6 +86,12 @@ function makeTextures() {
     for (let i = 0; i < w; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 16, h); g.stroke(); }
     g.fillStyle = '#e0b020'; g.fillRect(0, 0, w, 14); g.fillStyle = '#111';
     for (let i = 0; i < w; i += 28) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + 14, 0); g.lineTo(i + 4, 14); g.lineTo(i - 10, 14); g.fill(); }
+  });
+  T.barrier = canvasTex(128, 64, (g, w, h) => {
+    g.fillStyle = '#c9c5bc'; g.fillRect(0, 0, w, h);
+    speckle(g, w, h, 500, ['#a8a49b', '#dad6ce'], rnd, 2);
+    g.fillStyle = '#c4231c';
+    for (let x = -32; x < w + 32; x += 32) { g.beginPath(); g.moveTo(x, 8); g.lineTo(x + 16, 8); g.lineTo(x + 32, 28); g.lineTo(x + 16, 28); g.fill(); }
   });
   T.crate = canvasTex(128, 128, (g, w, h) => {
     g.fillStyle = '#9c6c38'; g.fillRect(0, 0, w, h);
@@ -144,12 +162,12 @@ export function buildWorld(scene) {
     return mesh;
   };
 
-  // ---------- Sky, fog and lights ----------
+  // ---------- Sky, fog and lights (only 2 lights in the whole scene) ----------
   scene.background = new THREE.Color(0x8fa6bf);
-  scene.fog = new THREE.Fog(0xa7b4c2, 140, 470);
+  scene.fog = new THREE.Fog(0xa7b4c2, 160, 560);
 
   const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(600, 32, 16),
+    new THREE.SphereGeometry(700, 32, 16),
     new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false,
       uniforms: { sunDir: { value: new THREE.Vector3(0.55, 0.35, -0.75).normalize() } },
@@ -182,7 +200,7 @@ export function buildWorld(scene) {
   scene.add(sun, sun.target);
 
   // ---------- Ground ----------
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240), new THREE.MeshStandardMaterial({ map: repeatTex(T.asphalt, 24, 24), roughness: 0.95 }));
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(330, 330), new THREE.MeshStandardMaterial({ map: repeatTex(T.asphalt, 33, 33), roughness: 0.95 }));
   ground.rotation.x = -Math.PI / 2;
   add(ground, false, true);
 
@@ -195,13 +213,19 @@ export function buildWorld(scene) {
   // Road markings
   const lineMat = new THREE.MeshBasicMaterial({ color: 0xe8d36a, polygonOffset: true, polygonOffsetFactor: -3 });
   const dash = new THREE.PlaneGeometry(0.25, 3);
-  for (let z = -90; z <= 90; z += 6) {
+  const dashAt = (x, z, rotZ) => {
+    const m = new THREE.Mesh(dash, lineMat); m.rotation.x = -Math.PI / 2; m.rotation.z = rotZ; m.position.set(x, 0.035, z);
+    add(m, false, true);
+  };
+  for (let z = -138; z <= 138; z += 6) {
     if (Math.abs(z) < 18) continue;
-    const m = new THREE.Mesh(dash, lineMat); m.rotation.x = -Math.PI / 2; m.position.set(30, 0.035, z); m.receiveShadow = true; scene.add(m);
+    dashAt(30, z, 0);
+    if (Math.abs(z) < 100) dashAt(-100, z, 0);
   }
-  for (let x = -90; x <= 90; x += 6) {
-    if (Math.abs(x) < 18 || x < -38) continue;
-    const m = new THREE.Mesh(dash, lineMat); m.rotation.x = -Math.PI / 2; m.rotation.z = Math.PI / 2; m.position.set(x, 0.035, 42); m.receiveShadow = true; scene.add(m);
+  for (let x = -138; x <= 138; x += 6) {
+    if (Math.abs(x) < 18 || (x < -38 && x > -100)) continue;
+    dashAt(x, 42, Math.PI / 2);
+    dashAt(x, -88, Math.PI / 2);
   }
 
   // ---------- Materials ----------
@@ -218,6 +242,7 @@ export function buildWorld(scene) {
     barrel: [new THREE.MeshStandardMaterial({ color: 0xb02a20, roughness: 0.5, metalness: 0.4 }), new THREE.MeshStandardMaterial({ color: 0x2a5aa0, roughness: 0.5, metalness: 0.4 })],
     lampPole: new THREE.MeshStandardMaterial({ color: 0x2a2d31, roughness: 0.5, metalness: 0.6 }),
     lampBulb: new THREE.MeshStandardMaterial({ color: 0xfff1c8, emissive: 0xffd890, emissiveIntensity: 2 }),
+    barrier: new THREE.MeshStandardMaterial({ map: T.barrier, roughness: 0.85 }),
   };
 
   const solidBox = (w, h, d, x, y, z, mat, data) => {
@@ -280,29 +305,85 @@ export function buildWorld(scene) {
     return mesh;
   }
 
-  function ramp(r, width) {
+  function ramp(r, width, thin = false) {
     const len = r.axis === 'x' ? r.maxX - r.minX : r.maxZ - r.minZ;
-    const geo = new THREE.BoxGeometry(r.axis === 'x' ? len : width, r.h, r.axis === 'x' ? width : len);
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const c = r.axis === 'x' ? pos.getX(i) : pos.getZ(i);
-      const lowEnd = r.dir > 0 ? c < 0 : c > 0;
-      if (lowEnd && pos.getY(i) > 0) pos.setY(i, -r.h / 2 + 0.05);
+    let geo, m;
+    if (thin) {
+      // Elevated walkway: a thin slab sheared along its slope.
+      geo = new THREE.BoxGeometry(r.axis === 'x' ? len : width, 0.3, r.axis === 'x' ? width : len);
+      const pos = geo.attributes.position;
+      const slope = (r.dir * r.h) / len;
+      for (let i = 0; i < pos.count; i++) {
+        const c = r.axis === 'x' ? pos.getX(i) : pos.getZ(i);
+        pos.setY(i, pos.getY(i) + slope * (c + len / 2));
+      }
+      geo.computeVertexNormals();
+      m = new THREE.Mesh(geo, mats.ramp);
+      m.position.set((r.minX + r.maxX) / 2, (r.dir > 0 ? r.base : r.base + r.h) - 0.15, (r.minZ + r.maxZ) / 2);
+    } else {
+      geo = new THREE.BoxGeometry(r.axis === 'x' ? len : width, r.h, r.axis === 'x' ? width : len);
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        const c = r.axis === 'x' ? pos.getX(i) : pos.getZ(i);
+        const lowEnd = r.dir > 0 ? c < 0 : c > 0;
+        if (lowEnd && pos.getY(i) > 0) pos.setY(i, -r.h / 2 + 0.05);
+      }
+      geo.computeVertexNormals();
+      m = new THREE.Mesh(geo, mats.ramp);
+      m.position.set((r.minX + r.maxX) / 2, r.base + r.h / 2, (r.minZ + r.maxZ) / 2);
     }
-    geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, mats.ramp);
-    m.position.set((r.minX + r.maxX) / 2, r.base + r.h / 2, (r.minZ + r.maxZ) / 2);
     add(m);
     addRamp(r);
     // Side rails
     const railGeo = new THREE.CylinderGeometry(0.05, 0.05, Math.hypot(len, r.h), 6);
+    const cx = (r.minX + r.maxX) / 2, cz = (r.minZ + r.maxZ) / 2;
     for (const s of [-1, 1]) {
       const rail = new THREE.Mesh(railGeo, mats.lampPole);
-      rail.position.set(m.position.x + (r.axis === 'z' ? s * width / 2 : 0), r.base + r.h / 2 + 1, m.position.z + (r.axis === 'x' ? s * width / 2 : 0));
+      rail.position.set(cx + (r.axis === 'z' ? s * width / 2 : 0), r.base + r.h / 2 + 1, cz + (r.axis === 'x' ? s * width / 2 : 0));
       const ang = Math.atan2(r.h, len) * r.dir;
       if (r.axis === 'x') rail.rotation.z = Math.PI / 2 + ang; else rail.rotation.x = Math.PI / 2 - ang;
       add(rail, true, false);
     }
+    if (thin) {
+      // Support pylons every ~12 m
+      const n = Math.max(1, Math.floor(len / 12));
+      for (let i = 1; i <= n; i++) {
+        const k = i / (n + 1);
+        const x = r.axis === 'x' ? r.minX + len * k : cx, z = r.axis === 'z' ? r.minZ + len * k : cz;
+        const top = r.base + (r.dir > 0 ? k : 1 - k) * r.h - 0.3;
+        solidBox(0.5, top, 0.5, x, 0, z, mats.darkMetal);
+      }
+    }
+  }
+
+  const barricade = (x, z, rot = false) => {
+    const w = rot ? 0.7 : 3.2, d = rot ? 3.2 : 0.7;
+    solidBox(w, 0.35, d, x, 0, z, mats.concrete);
+    solidBox(rot ? 0.45 : 3.2, 0.8, rot ? 3.2 : 0.45, x, 0.35, z, mats.barrier);
+  };
+
+  const laserTraps = [];
+  const laserMat = new THREE.MeshBasicMaterial({ color: 0xff2030, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+  const laserGeo = new THREE.BoxGeometry(1, 0.05, 0.05);
+  function laserTrap(ax, az, bx, bz, period = 3, offset = 0) {
+    solidBox(0.35, 2.1, 0.35, ax, 0, az, mats.darkMetal);
+    solidBox(0.35, 2.1, 0.35, bx, 0, bz, mats.darkMetal);
+    const len = Math.hypot(bx - ax, bz - az);
+    const beams = [];
+    for (const y of [0.45, 1.05, 1.65]) {
+      const b = new THREE.Mesh(laserGeo, laserMat);
+      b.position.set((ax + bx) / 2, y, (az + bz) / 2);
+      b.scale.x = len;
+      b.rotation.y = -Math.atan2(bz - az, bx - ax);
+      scene.add(b);
+      beams.push(b);
+    }
+    for (const [x, z] of [[ax, az], [bx, bz]]) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, 0.4), new THREE.MeshBasicMaterial({ color: 0xff3040 }));
+      lamp.position.set(x, 2.15, z); scene.add(lamp);
+      beams.push(lamp);
+    }
+    laserTraps.push({ a: new THREE.Vector2(ax, az), b: new THREE.Vector2(bx, bz), beams, period, offset, on: true });
   }
 
   const container = (x, z, rot, ci, y = 0) => {
@@ -337,13 +418,13 @@ export function buildWorld(scene) {
   };
 
   // Perimeter walls
-  const H = 100;
+  const H = 144;
   solidBox(2 * H + 4, 9, 2, 0, 0, -H - 1, mats.wall);
   solidBox(2 * H + 4, 9, 2, 0, 0, H + 1, mats.wall);
   solidBox(2, 9, 2 * H, -H - 1, 0, 0, mats.wall);
   solidBox(2, 9, 2 * H, H + 1, 0, 0, mats.wall);
 
-  // City buildings
+  // City buildings (inner district)
   building(-50, -45, 18, 14, 14, 0);
   building(-20, -55, 14, 12, 9, 2);
   building(-45, 0, 14, 16, 18, 1);
@@ -357,15 +438,57 @@ export function buildWorld(scene) {
   building(-80, 75, 14, 14, 13, 0);
   building(82, -2, 12, 18, 15, 3);
 
+  // Outer districts
+  building(-120, -110, 20, 16, 16, 1);
+  building(-90, -120, 14, 14, 11, 2);
+  building(0, -115, 24, 14, 20, 0);
+  building(35, -118, 14, 14, 13, 3);
+  building(110, -110, 16, 16, 24, 1);
+  building(120, -65, 14, 18, 12, 2);
+  building(115, 40, 18, 14, 18, 0);
+  building(118, 95, 16, 18, 9, 3);
+  building(70, 120, 20, 12, 14, 2);
+  building(20, 118, 14, 14, 8, 1);
+  building(-40, 118, 18, 14, 17, 3);
+  building(-115, 30, 14, 20, 21, 1);
+  building(-118, -30, 16, 14, 10, 0);
+  building(-118, 110, 12, 12, 12, 2);
+
   // Zone B: tower with terrace + annex
   building(55, -50, 16, 16, 22, 1, { parapet: 1.1, noProps: true });
   building(55, -37, 16, 10, 11, 0, { parapet: 0.45, noProps: true });
 
-  // Ramps
+  // Ramps from the street
   ramp({ minX: 25, maxX: 47, minZ: -40, maxZ: -34, axis: 'x', dir: 1, base: 0, h: 11 }, 6);
   ramp({ minX: 50, maxX: 56, minZ: 2, maxZ: 18, axis: 'z', dir: 1, base: 0, h: 8 }, 6);
   ramp({ minX: -28, maxX: -16, minZ: -23, maxZ: -17, axis: 'x', dir: 1, base: 0, h: 6 }, 6);
   ramp({ minX: -9, maxX: -1, minZ: 77, maxZ: 89, axis: 'z', dir: -1, base: 0, h: 7 }, 6);
+  ramp({ minX: -110, maxX: -94, minZ: -32, maxZ: -27, axis: 'x', dir: -1, base: 0, h: 10 }, 5);
+  ramp({ minX: 15, maxX: 20, minZ: 95, maxZ: 111, axis: 'z', dir: 1, base: 0, h: 8 }, 5);
+
+  // Elevated walkways between rooftops
+  ramp({ minX: -41, maxX: -27, minZ: -51.5, maxZ: -49.2, axis: 'x', dir: -1, base: 9, h: 5 }, 2.3, true);
+  ramp({ minX: 27, maxX: 46, minZ: 23.5, maxZ: 26.5, axis: 'x', dir: -1, base: 8, h: 4 }, 3, true);
+  ramp({ minX: -4, maxX: 14, minZ: -22.5, maxZ: -19.5, axis: 'x', dir: 1, base: 6, h: 10 }, 3, true);
+  ramp({ minX: 27, maxX: 60, minZ: 118.5, maxZ: 121.5, axis: 'x', dir: -1, base: 8, h: 6 }, 3, true);
+  ramp({ minX: -117.5, maxX: -114.5, minZ: -23, maxZ: 20, axis: 'z', dir: 1, base: 10, h: 11 }, 3, true);
+  ramp({ minX: -110, maxX: -97, minZ: -117, maxZ: -114, axis: 'x', dir: -1, base: 11, h: 5 }, 3, true);
+  ramp({ minX: 12, maxX: 28, minZ: -118, maxZ: -115, axis: 'x', dir: -1, base: 13, h: 7 }, 3, true);
+
+  // Concrete barricades
+  for (const [x, z, r] of [
+    [-60, 21, 0], [-49, 21, 0], [-36, 40, 1], [-36, 47, 1], [44, -72, 0], [56, -74, 0], [66, -72, 0],
+    [36, -48, 1], [30, -60, 1], [26, 60, 0], [-30, 92, 0], [0, -92, 0], [8, -92, 0], [100, -40, 1],
+    [98, 22, 1], [-92, -62, 0], [-88, 44, 1], [62, 100, 0], [-20, 100, 0], [120, 10, 1], [-130, 70, 0],
+  ]) barricade(x, z, !!r);
+
+  // Laser trap gates (blinking)
+  laserTrap(-58, 30.3, -52, 30.3, 3.2, 0);
+  laserTrap(-40.3, 41, -40.3, 49, 2.6, 1.1);
+  laserTrap(32, -58, 32, -46, 3.0, 0.6);
+  laserTrap(-12, -92, -4, -92, 2.4, 0.3);
+  laserTrap(96, 58, 104, 58, 2.8, 1.5);
+  laserTrap(-104, 50, -96, 50, 3.4, 0.9);
 
   // Zone A: walled courtyard with open warehouse shed
   flat(30, 30, -55, 45, T.concrete, 10, 10, 0.03, 0xa8a49b);
@@ -380,7 +503,7 @@ export function buildWorld(scene) {
   crate(-63, 38); crate(-64.5, 38);
   crate(-46, 48); crate(-46, 49.5); crate(-46, 48, 1.2, 1.4);
   crate(-66, 52, 1.4); crate(-62, 55, 1.2);
-  barrel(-48, 42, 0); barrel(-47, 43, 1); barrel(-68, 33, 0);
+  barrel(-47, 43.2, 1);
   container(-62, 33.5, false, 0);
 
   // Central plaza + fountain
@@ -416,7 +539,7 @@ export function buildWorld(scene) {
   crate(64, -64); crate(66, -64); crate(45, -26);
   crate(35, 15); crate(-30, 10); crate(-30, 11.4); crate(5, 35); crate(6.4, 35);
   crate(-35, -60); crate(60, 45); crate(70, 50); crate(-60, 15); crate(-62, -25);
-  barrel(14, -8, 0); barrel(15, -7, 1); barrel(-12, 30, 0); barrel(48, -66, 1); barrel(49, -66, 0); barrel(64, 40, 1);
+  barrel(15, -7, 1); barrel(49.2, -67, 1); barrel(64, 40, 1);
 
   // Zone B roof cover
   const roofY = 22;
@@ -427,17 +550,47 @@ export function buildWorld(scene) {
 
   // Distant skyline (visual only)
   const skyMat = [0, 1, 2, 3].map((v) => new THREE.MeshStandardMaterial({ map: repeatTex(T.facade[v], 1.5, 3), emissiveMap: repeatTex(T.lit[v], 1.5, 3), emissive: 0xffffff, emissiveIntensity: 0.9, roughness: 0.9 }));
-  for (let i = 0; i < 44; i++) {
-    const a = (i / 44) * Math.PI * 2 + rnd() * 0.1;
-    const r = 135 + rnd() * 60;
-    const w = 14 + rnd() * 18, h = 25 + rnd() * 60;
+  for (let i = 0; i < 52; i++) {
+    const a = (i / 52) * Math.PI * 2 + rnd() * 0.1;
+    const r = 190 + rnd() * 70;
+    const w = 16 + rnd() * 20, h = 30 + rnd() * 70;
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), skyMat[i % 4]);
     m.position.set(Math.cos(a) * r, h / 2, Math.sin(a) * r);
     m.rotation.y = rnd() * Math.PI;
-    scene.add(m);
+    add(m, false, false);
   }
 
-  return { sun, hemi, buildings };
+  mergeStatic(scene, shadowObjs);
+  return { sun, hemi, buildings, laserTraps };
+}
+
+// Bake every static single-material mesh into one mesh per (material, shadow flags) to cut draw calls.
+function mergeStatic(scene, meshes) {
+  const groups = new Map();
+  for (const m of meshes) {
+    if (Array.isArray(m.material)) continue;
+    m.updateMatrixWorld(true);
+    const key = `${m.material.uuid}|${m.castShadow}|${m.receiveShadow}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { mat: m.material, cast: m.castShadow, receive: m.receiveShadow, geos: [], src: [] }));
+    const geo = m.geometry.clone().applyMatrix4(m.matrixWorld);
+    for (const name of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geo.deleteAttribute(name);
+    g.geos.push(geo);
+    g.src.push(m);
+  }
+  for (const g of groups.values()) {
+    if (g.geos.length < 2) continue;
+    const allIndexed = g.geos.every((x) => x.index);
+    const geos = allIndexed ? g.geos : g.geos.map((x) => (x.index ? x.toNonIndexed() : x));
+    const merged = mergeGeometries(geos, false);
+    if (!merged) continue;
+    for (const m of g.src) scene.remove(m);
+    for (const x of g.geos) x.dispose();
+    const mesh = new THREE.Mesh(merged, g.mat);
+    mesh.castShadow = g.cast; mesh.receiveShadow = g.receive;
+    mesh.matrixAutoUpdate = false;
+    scene.add(mesh);
+  }
 }
 
 // Enemy spawn definitions
@@ -447,18 +600,26 @@ export function enemySpawns() {
   const shedRoof = { minX: -66, maxX: -50, minZ: 45, maxZ: 57, y: 6.45 };
   const b5Roof = { minX: 14, maxX: 26, minZ: 16, maxZ: 34, y: 12 };
   const b1Roof = { minX: -58, maxX: -42, minZ: -51, maxZ: -39, y: 14 };
+  const n7Roof = { minX: 107, maxX: 123, minZ: 34, maxZ: 46, y: 18 };
+  const n12Roof = { minX: -121, maxX: -109, minZ: 21, maxZ: 39, y: 21 };
   return [
     // Zone A
     { x: -50, z: 40, r: 5 }, { x: -62, z: 41, r: 5 }, { x: -47, z: 53, r: 4 }, { x: -63, z: 50, r: 3 },
     { x: -54, z: 34, r: 4 },
     { x: -58, y: 6.45, z: 50, platform: shedRoof },
+    { x: -54, z: 47, r: 3, boss: 'armored' },
     // Zone B
     { x: 52.5, y: 22, z: -44.5, platform: towerRoof }, { x: 57.5, y: 22, z: -44.5, platform: towerRoof },
     { x: 49.5, y: 22, z: -53, platform: towerRoof }, { x: 58, y: 22, z: -52.5, platform: towerRoof },
     { x: 55, y: 11, z: -36, platform: annexRoof },
     { x: 42, z: -52, r: 5 }, { x: 55, z: -66, r: 6 },
+    { x: 51.5, y: 22, z: -49.5, platform: towerRoof, boss: 'commander' },
     // Patrols
     { x: 6, z: 22, r: 8 }, { x: 22, z: 2, r: 8 }, { x: -26, z: -6, r: 7 }, { x: 36, z: 52, r: 8 }, { x: -5, z: -40, r: 8 },
     { x: 20, y: 12, z: 25, platform: b5Roof }, { x: -50, y: 14, z: -45, platform: b1Roof },
+    // Outer districts
+    { x: 0, z: -96, r: 8 }, { x: 95, z: -92, r: 8 }, { x: 100, z: 72, r: 8 }, { x: -95, z: 62, r: 8 },
+    { x: -92, z: -82, r: 8 }, { x: 48, z: 104, r: 8 },
+    { x: 115, y: 18, z: 42, platform: n7Roof }, { x: -115, y: 21, z: 26, platform: n12Roof },
   ];
 }

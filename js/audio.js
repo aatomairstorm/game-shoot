@@ -175,11 +175,68 @@ export class AudioFX {
     this.noise(0.5, 0.4 * a, 'lowpass', 700, 90, 1.5);
   }
 
-  gunshot(pos) {
+  gunshot(pos, big = false) {
     const a = this.att(pos);
     if (a < 0.01) return;
-    this.noise(0.14, 0.32 * a, 'bandpass', 1700, 350, 0.7);
-    this.tone('square', 150, 55, 0.07, 0.07 * a);
+    this.noise(big ? 0.22 : 0.14, (big ? 0.42 : 0.32) * a, 'bandpass', big ? 1100 : 1700, big ? 200 : 350, 0.7);
+    this.tone('square', big ? 110 : 150, 55, big ? 0.12 : 0.07, 0.07 * a);
+  }
+  turretShot(pos) {
+    const a = this.att(pos);
+    if (a < 0.01) return;
+    this.noise(0.09, 0.26 * a, 'bandpass', 2600, 600, 1);
+    this.tone('square', 260, 90, 0.05, 0.05 * a);
+  }
+  bossCharge(pos) { const a = this.att(pos); this.tone('sawtooth', 60, 220, 0.6, 0.18 * a); this.noise(0.6, 0.2 * a, 'lowpass', 200, 1200, 2); }
+  laserZap() { this.tone('square', 900, 300, 0.15, 0.1); this.noise(0.12, 0.12, 'highpass', 4000, 6000); }
+
+  // Lucia: short pentatonic phrase + head pop
+  sing() {
+    const scale = [659, 784, 880, 1047, 1175, 1319];
+    const n = scale[(Math.random() * scale.length) | 0];
+    this.tone('sine', n, n, 0.22, 0.12);
+    this.tone('triangle', n * 1.5, n * 1.5, 0.18, 0.05, 0.08);
+    this.noise(0.15, 0.05, 'bandpass', 5000, 3000, 3);
+  }
+  charm(pos) {
+    const a = this.att(pos);
+    [1047, 1319, 1568, 2093].forEach((f, i) => this.tone('sine', f, f * 1.01, 0.2, 0.08 * a, i * 0.12));
+  }
+  headPop(pos) {
+    const a = this.att(pos);
+    this.tone('sine', 900, 120, 0.25, 0.3 * a);
+    this.noise(0.35, 0.4 * a, 'bandpass', 2400, 300, 1.2);
+    [523, 659, 784].forEach((f) => this.tone('triangle', f * 2, f * 2, 0.4, 0.05 * a, 0.05));
+  }
+  vortex() { this.noise(0.6, 0.35, 'bandpass', 400, 2400, 2); this.tone('sine', 200, 700, 0.5, 0.1); }
+
+  // Ben 10
+  omnitrix() {
+    this.tone('square', 220, 880, 0.18, 0.08);
+    this.tone('sine', 1320, 1320, 0.25, 0.1, 0.12);
+    this.noise(0.4, 0.2, 'bandpass', 1200, 5000, 2, 0.05);
+  }
+  rollStart() { this.noise(0.3, 0.25, 'lowpass', 200, 900, 1); this.tone('sine', 80, 160, 0.3, 0.2); }
+  dash() { this.noise(0.25, 0.3, 'bandpass', 600, 5000, 1.5); this.tone('sawtooth', 300, 1500, 0.15, 0.07); }
+  zap(pos) {
+    const a = pos ? this.att(pos) : 1;
+    this.noise(0.12, 0.25 * a, 'highpass', 2500, 5000, 1);
+    this.tone('square', 120 + Math.random() * 60, 60, 0.1, 0.06 * a);
+  }
+  bigZap() {
+    this.noise(1.0, 0.8, 'lowpass', 3000, 80, 0.8);
+    this.tone('sawtooth', 50, 25, 0.9, 0.4);
+    for (let i = 0; i < 8; i++) this.noise(0.06, 0.25, 'highpass', 3000, 5000, 1, i * 0.05 + Math.random() * 0.04);
+  }
+
+  // Fia Rood
+  holyShot() { this.tone('sine', 1568, 2093, 0.18, 0.08); this.tone('triangle', 784, 1047, 0.22, 0.05); this.noise(0.2, 0.07, 'highpass', 5000, 8000); }
+  holyHit(pos) { const a = this.att(pos); this.tone('sine', 1047, 523, 0.3, 0.15 * a); this.noise(0.3, 0.2 * a, 'bandpass', 3000, 800, 1.5); }
+  heal() { [523, 659, 784, 1047, 1319].forEach((f, i) => this.tone('sine', f, f, 0.6, 0.08, i * 0.07)); this.noise(0.8, 0.08, 'highpass', 6000, 9000, 1, 0, 0.3); }
+  dragon() {
+    this.tone('sawtooth', 160, 70, 0.8, 0.18);
+    this.noise(0.9, 0.35, 'bandpass', 300, 900, 1.5, 0, 0.1);
+    for (let i = 0; i < 4; i++) this.noise(0.25, 0.18, 'lowpass', 500, 200, 1, 0.35 + i * 0.22, 0.05);
   }
   whiz() { this.noise(0.12, 0.07, 'bandpass', 4000, 1500, 4); }
   ricochet(pos) { this.noise(0.08, 0.1 * this.att(pos), 'highpass', 3000, 5000, 1); }

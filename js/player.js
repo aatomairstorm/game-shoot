@@ -3,6 +3,7 @@ import { moveBody, raycastWorld } from './collision.js';
 import { createHero, createHammer, walkPose } from './models.js';
 import { HEROES } from './heroes.js';
 import { PLAYER_SPAWN } from './world.js';
+import { LuciaKit, BenKit, FiaKit } from './kits.js';
 
 const GRAVITY = 30;
 const UP = new THREE.Vector3(0, 1, 0);
@@ -32,7 +33,18 @@ export class Player {
     this.wish = new THREE.Vector3();
     this.mode = 'ground';
     this.lastWall = null;
-    this.kit = id === 'web' ? new WebKit(this) : id === 'thor' ? new ThorKit(this) : new IronKit(this);
+    this.invuln = false;
+    const Kits = { web: WebKit, thor: ThorKit, iron: IronKit, lucia: LuciaKit, ben: BenKit, fia: FiaKit };
+    this.kit = new (Kits[id] || WebKit)(this);
+    this.syncModel();
+  }
+
+  // Swap the visible character model (Omnitrix transformations).
+  setModel(model) {
+    this.G.scene.remove(this.model.root);
+    this.model = model;
+    model.root.traverse((o) => { if (o.isMesh && o.castShadow !== false) o.castShadow = true; });
+    this.G.scene.add(model.root);
     this.syncModel();
   }
 
@@ -49,8 +61,9 @@ export class Player {
   get speed() { return Math.hypot(this.vel.x, this.vel.y, this.vel.z); }
 
   takeDamage(amount, from) {
-    if (this.dead) return;
+    if (this.dead || this.invuln) return;
     const G = this.G;
+    this.kit.onDamaged?.(amount);
     this.hp -= amount * (this.kit.damageScale || 1);
     this.lastHurt = G.time;
     G.hud.damageFlash(amount / 6);
@@ -106,6 +119,7 @@ export class Player {
       }
       this.vel.y -= GRAVITY * dt;
     }
+    this.kit.afterPhysics?.(dt);
 
     const r = moveBody(this, dt, this.mode !== 'flight');
     this.lastWall = r.wall;

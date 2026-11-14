@@ -1,15 +1,62 @@
 import * as THREE from 'three';
 
-// Collision world: axis-aligned boxes plus linear ramps.
+// Collision world: axis-aligned boxes plus linear ramps, with a uniform grid for point queries.
 export const STEP = 0.55;
-export const WORLD_HALF = 97.5;
+export const WORLD_HALF = 142.5;
 export const boxes = [];
 export const ramps = [];
 
+const CELL = 10;
+const grid = new Map();
+let queryId = 0;
+const near = [];
+const cellKey = (ix, iz) => (ix + 512) * 1024 + (iz + 512);
+
+function gridInsert(b) {
+  const x0 = Math.floor(b.min.x / CELL), x1 = Math.floor(b.max.x / CELL);
+  const z0 = Math.floor(b.min.z / CELL), z1 = Math.floor(b.max.z / CELL);
+  for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) {
+    const k = cellKey(ix, iz);
+    let c = grid.get(k);
+    if (!c) grid.set(k, (c = []));
+    c.push(b);
+  }
+}
+
+// Candidate boxes overlapping the square (x±r, z±r). Returned array is reused.
+export function nearBoxes(x, z, r) {
+  near.length = 0;
+  const q = ++queryId;
+  const x0 = Math.floor((x - r) / CELL), x1 = Math.floor((x + r) / CELL);
+  const z0 = Math.floor((z - r) / CELL), z1 = Math.floor((z + r) / CELL);
+  for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) {
+    const c = grid.get(cellKey(ix, iz));
+    if (!c) continue;
+    for (let i = 0; i < c.length; i++) {
+      const b = c[i];
+      if (b._q === q) continue;
+      b._q = q;
+      near.push(b);
+    }
+  }
+  return near;
+}
+
 export function addBox(minX, minY, minZ, maxX, maxY, maxZ, data = {}) {
-  const b = { min: new THREE.Vector3(minX, minY, minZ), max: new THREE.Vector3(maxX, maxY, maxZ), ...data };
+  const b = { min: new THREE.Vector3(minX, minY, minZ), max: new THREE.Vector3(maxX, maxY, maxZ), _q: 0, ...data };
   boxes.push(b);
+  gridInsert(b);
   return b;
+}
+
+export function removeBox(b) {
+  const i = boxes.indexOf(b);
+  if (i < 0) return;
+  boxes.splice(i, 1);
+  for (const c of grid.values()) {
+    const j = c.indexOf(b);
+    if (j >= 0) c.splice(j, 1);
+  }
 }
 
 // r: { minX, maxX, minZ, maxZ, axis: 'x'|'z', dir: 1|-1, base, h }
@@ -33,8 +80,9 @@ export function rampHeightAt(r, x, z) {
 export function groundHeight(x, z, y, radius = 0.45) {
   let best = 0;
   const m = radius * 0.6;
-  for (let i = 0; i < boxes.length; i++) {
-    const b = boxes[i];
+  const list = nearBoxes(x, z, m);
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
     if (x < b.min.x - m || x > b.max.x + m || z < b.min.z - m || z > b.max.z + m) continue;
     const top = b.max.y;
     if (top <= y + STEP && top > best) best = top;
@@ -51,8 +99,9 @@ export function groundHeight(x, z, y, radius = 0.45) {
 export function ceilingHeight(x, z, y, height, radius = 0.45) {
   let best = Infinity;
   const m = radius * 0.7;
-  for (let i = 0; i < boxes.length; i++) {
-    const b = boxes[i];
+  const list = nearBoxes(x, z, m);
+  for (let i = 0; i < list.length; i++) {
+    const b = list[i];
     if (x < b.min.x - m || x > b.max.x + m || z < b.min.z - m || z > b.max.z + m) continue;
     if (b.min.y >= y + height - 0.05 && b.min.y < best) best = b.min.y;
   }
@@ -86,8 +135,9 @@ export function resolveHorizontal(p, r, h) {
   _push.set(0, 0, 0);
   let hit = false;
   for (let pass = 0; pass < 2; pass++) {
-    for (let i = 0; i < boxes.length; i++) {
-      const b = boxes[i];
+    const list = nearBoxes(p.x, p.z, r + 0.5);
+    for (let i = 0; i < list.length; i++) {
+      const b = list[i];
       if (p.y + h <= b.min.y + 0.05 || p.y >= b.max.y - STEP) continue;
       if (pushOut(p, r, b.min.x, b.max.x, b.min.z, b.max.z)) hit = true;
     }

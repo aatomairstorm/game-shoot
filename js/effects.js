@@ -139,14 +139,17 @@ export class FX {
       this.rings.push({ mesh: m, t: 0, life: 0.6, r: 8 });
     }
 
-    // Fixed light pool: adding/removing lights at runtime would force shader recompiles.
-    this.lights = [];
+    // Expanding energy spheres (area blasts). Glow is faked with additive meshes/particles:
+    // the scene is limited to the hemisphere + sun lights.
+    this.spheres = [];
+    const sphGeo = new THREE.SphereGeometry(1, 24, 16);
     for (let i = 0; i < 4; i++) {
-      const l = new THREE.PointLight(0xffaa55, 0, 22, 2);
-      scene.add(l);
-      this.lights.push({ light: l, t: 0, life: 0.2, peak: 0 });
+      const m = new THREE.Mesh(sphGeo, new THREE.MeshBasicMaterial({ color: 0x66ff88, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      m.visible = false; scene.add(m);
+      this.spheres.push({ mesh: m, t: 0, life: 0.6, r: 8 });
     }
-    this.lightCursor = 0;
+    this.quality = 1;
+    this.colorCache = new Map();
   }
 
   setViewport(height, fov) {
@@ -155,10 +158,17 @@ export class FX {
     this.smoke.mat.uniforms.uScale.value = s;
   }
 
+  color(c) {
+    let v = this.colorCache.get(c);
+    if (!v) this.colorCache.set(c, (v = new THREE.Color(c)));
+    return v;
+  }
+
   burst(pos, n, o) {
     const sys = o.additive === false ? this.smoke : this.add;
     _c.set(o.color ?? 0xffffff);
-    const colors = o.colors ? o.colors.map((c) => new THREE.Color(c)) : null;
+    const colors = o.colors ? o.colors.map((c) => this.color(c)) : null;
+    n = Math.max(1, Math.round(n * this.quality));
     for (let i = 0; i < n; i++) {
       const sp = (o.speed ?? 5) * (0.35 + Math.random() * 0.65);
       let dx = Math.random() * 2 - 1, dy = Math.random() * 2 - 1, dz = Math.random() * 2 - 1;
@@ -206,16 +216,31 @@ export class FX {
     } else if (palette === 'stink') {
       this.burst(pos, 30 * scale, { colors: [0x6b5a24, 0x8a7a30, 0x5a4a1c, 0x7a8a2a], additive: false, speed: 6 * scale, life: 1.4, size: 1.2, size1: 3.5, alpha: 0.7, drag: 2.5, gravity: -0.5, fadeIn: true });
       this.burst(pos, 12, { colors: [0x5a3a1a, 0x3e2810], additive: false, speed: 9, life: 0.7, size: 0.25, size1: 0.2, gravity: 18, drag: 0.5, alpha: 1 });
+    } else if (palette === 'gold') {
+      this.burst(pos, 22 * scale, { colors: [0xfff3b0, 0xffd34a, 0xffffff], speed: 7 * scale, life: 0.5, size: 0.9 * scale, size1: 0.1, drag: 3 });
+      this.burst(pos, 14 * scale, { colors: [0xffe27a, 0xffc040], speed: 3, up: 1, life: 1.0, size: 0.18, size1: 0.02, gravity: -3, drag: 1 });
+      this.flash(pos, 0xffd860, 110 * scale, 0.25);
+    } else if (palette === 'pink') {
+      this.burst(pos, 26 * scale, { colors: [0xff8ad8, 0x8fe6ff, 0xffffff, 0xffb0e8], speed: 8 * scale, life: 0.55, size: 0.6 * scale, size1: 0.08, drag: 2.5 });
+      this.flash(pos, 0xff9ae0, 120 * scale, 0.25);
+    } else if (palette === 'green') {
+      this.burst(pos, 26 * scale, { colors: [0x7dff7a, 0x2fe05a, 0xd8ffd0], speed: 8 * scale, life: 0.45, size: 0.6 * scale, size1: 0.08, drag: 2.5 });
+      this.flash(pos, 0x66ff88, 120 * scale, 0.25);
     }
   }
 
+  // Short-lived additive glow standing in for a dynamic point light.
   flash(pos, color, intensity = 80, life = 0.2) {
-    const L = this.lights[this.lightCursor];
-    this.lightCursor = (this.lightCursor + 1) % this.lights.length;
-    L.light.position.copy(pos);
-    L.light.color.set(color);
-    L.peak = intensity; L.t = 0; L.life = life;
-    L.light.intensity = intensity;
+    _c.set(color);
+    this.add.emit(pos.x, pos.y, pos.z, 0, 0, 0, { color: _c, life: life * 1.4, size: Math.min(14, 1.5 + intensity * 0.04), size1: 0.5, alpha: 0.55 });
+  }
+
+  blast(pos, radius = 8, color = 0x66ff88, life = 0.6) {
+    const S = this.spheres.find((x) => !x.mesh.visible) || this.spheres[0];
+    S.mesh.position.copy(pos);
+    S.mesh.material.color.set(color);
+    S.mesh.visible = true; S.t = 0; S.life = life; S.r = radius;
+    S.mesh.scale.setScalar(0.1);
   }
 
   beam(a, b, color = 0x66ddff, width = 0.06, life = 0.12) {
@@ -287,10 +312,13 @@ export class FX {
       R.mesh.scale.setScalar(0.2 + R.r * (1 - Math.pow(1 - k, 3)));
       R.mesh.material.opacity = 1 - k;
     }
-    for (const L of this.lights) {
-      if (L.light.intensity <= 0) continue;
-      L.t += dt;
-      L.light.intensity = L.t >= L.life ? 0 : L.peak * (1 - L.t / L.life);
+    for (const S of this.spheres) {
+      if (!S.mesh.visible) continue;
+      S.t += dt;
+      const k = S.t / S.life;
+      if (k >= 1) { S.mesh.visible = false; continue; }
+      S.mesh.scale.setScalar(0.3 + S.r * (1 - Math.pow(1 - k, 2.5)));
+      S.mesh.material.opacity = 0.6 * (1 - k);
     }
     this.shake = Math.max(0, this.shake - dt * 2.2);
   }
@@ -300,7 +328,7 @@ export class FX {
     for (const B of this.beams) B.mesh.visible = false;
     for (const L of this.bolts) L.line.visible = false;
     for (const R of this.rings) R.mesh.visible = false;
-    for (const L of this.lights) L.light.intensity = 0;
+    for (const S of this.spheres) S.mesh.visible = false;
     this.shake = 0;
   }
 }
