@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hero Strike — Operazione Ostaggi</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- HUD di gioco -->
+  <div id="hud" class="hidden">
+    <div id="damage-vignette"></div>
+    <div id="markers"></div>
+
+    <div id="hp-panel" class="panel">
+      <div id="hero-name">EROE</div>
+      <div class="hp-bar"><div id="hp-fill"></div><span id="hp-text">100 / 100</span></div>
+      <div id="status-line"></div>
+    </div>
+
+    <div id="objectives" class="panel">
+      <div class="obj"><span class="lbl">Ostaggi Salvati</span><span id="hostage-count" class="val">0/2</span></div>
+      <div class="sep"></div>
+      <div class="obj"><span class="lbl">Banditi Rimasti</span><span id="bandit-count" class="val">0</span></div>
+    </div>
+
+    <div id="toasts"></div>
+
+    <div id="crosshair">
+      <span class="ch ch-t"></span><span class="ch ch-b"></span><span class="ch ch-l"></span><span class="ch ch-r"></span>
+      <span class="ch-dot"></span>
+    </div>
+    <div id="hitmarker"><span></span><span></span><span></span><span></span></div>
+
+    <div id="interact" class="hidden">
+      <svg viewBox="0 0 100 100" width="96" height="96">
+        <circle cx="50" cy="50" r="42" class="ring-bg"></circle>
+        <circle cx="50" cy="50" r="42" class="ring-fg" id="interact-ring"></circle>
+      </svg>
+      <div class="interact-key">F</div>
+      <div id="interact-text">Tieni premuto <b>F</b> per liberare l'ostaggio</div>
+    </div>
+
+    <div id="powers"></div>
+    <div id="hints"></div>
+  </div>
+
+  <!-- Menu principale -->
+  <div id="menu" class="screen">
+    <div class="menu-inner">
+      <header class="title-block">
+        <div class="title-kicker">MISSIONE DI SALVATAGGIO</div>
+        <h1 class="title">HERO <span>STRIKE</span></h1>
+        <div class="title-sub">Operazione Ostaggi — Distretto Industriale</div>
+      </header>
+      <div id="hero-cards"></div>
+      <div class="menu-actions">
+        <button id="btn-start" class="btn primary">INIZIA MISSIONE</button>
+      </div>
+      <div class="menu-foot">
+        <span><b>WASD</b> Movimento</span><span><b>Mouse</b> Visuale</span><span><b>F</b> (tieni premuto) Libera ostaggio</span><span><b>Esc</b> Pausa</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pausa -->
+  <div id="pause" class="screen hidden">
+    <div class="modal">
+      <h2>PAUSA</h2>
+      <p>Il mouse è stato sbloccato.</p>
+      <div class="modal-actions">
+        <button id="btn-resume" class="btn primary">RIPRENDI</button>
+        <button id="btn-pause-menu" class="btn">MENU PRINCIPALE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fine partita -->
+  <div id="end" class="screen hidden">
+    <div class="modal">
+      <h2 id="end-title">VITTORIA</h2>
+      <p id="end-sub"></p>
+      <div id="end-stats"></div>
+      <div class="modal-actions">
+        <button id="btn-replay" class="btn primary">RIGIOCA</button>
+        <button id="btn-change" class="btn">CAMBIA PERSONAGGIO</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loading" class="screen"><div class="loader"></div><p>Caricamento del distretto…</p></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
