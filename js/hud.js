@@ -13,6 +13,8 @@ export class HUD {
     this.interact = $('interact'); this.ring = $('interact-ring'); this.interactText = $('interact-text');
     this.powersEl = $('powers'); this.hintsEl = $('hints'); this.vignette = $('damage-vignette');
     this.markersEl = $('markers');
+    this.turrets = $('turret-count');
+    this.bossBar = $('boss-bar'); this.bossName = $('boss-name'); this.bossFill = $('boss-fill'); this.bossHp = $('boss-hp');
     this.markers = new Map();
     this.cache = {};
     this.spread = 0; this.recoilV = 0; this.dmg = 0;
@@ -72,9 +74,24 @@ export class HUD {
     if (this.cache.low !== low) { this.cache.low = low; this.hpFill.classList.toggle('low', low); }
   }
 
-  setCounts(saved, total, bandits) {
+  setCounts(saved, total, bandits, turrets = 0) {
     this.set('hc', this.hostages, 'text', `${saved}/${total}`);
     this.set('bc', this.bandits, 'text', String(bandits));
+    this.set('tc', this.turrets, 'text', String(turrets));
+  }
+
+  setBoss(boss) {
+    const show = !!boss;
+    if (this.cache.bs !== show) { this.cache.bs = show; this.bossBar.classList.toggle('hidden', !show); }
+    if (!show) return;
+    if (this.cache.bn !== boss.name) {
+      this.cache.bn = boss.name;
+      this.bossName.textContent = boss.name;
+      this.bossBar.classList.toggle('commander', boss.bossType === 'commander');
+    }
+    const k = Math.max(0, boss.hp / boss.maxHp);
+    this.set('bw', this.bossFill, 'width', (k * 100).toFixed(1) + '%');
+    this.set('bh', this.bossHp, 'text', `${Math.ceil(Math.max(0, boss.hp))} / ${boss.maxHp}`);
   }
 
   setStatus(t) { this.set('st', this.status, 'text', t); }

@@ -9,13 +9,15 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
       }
     }
   </script>
 </head>
 <body>
   <canvas id="game"></canvas>
+  <div id="fps">-- FPS</div>
 
   <!-- HUD di gioco -->
   <div id="hud" class="hidden">
@@ -32,6 +34,13 @@
       <div class="obj"><span class="lbl">Ostaggi Salvati</span><span id="hostage-count" class="val">0/2</span></div>
       <div class="sep"></div>
       <div class="obj"><span class="lbl">Banditi Rimasti</span><span id="bandit-count" class="val">0</span></div>
+      <div class="sep"></div>
+      <div class="obj"><span class="lbl">Torrette</span><span id="turret-count" class="val">0</span></div>
+    </div>
+
+    <div id="boss-bar" class="hidden">
+      <div id="boss-name">BOSS</div>
+      <div class="boss-track"><div id="boss-fill"></div><span id="boss-hp"></span></div>
     </div>
 
     <div id="toasts"></div>
@@ -65,6 +74,7 @@
       </header>
       <div id="hero-cards"></div>
       <div class="menu-actions">
+        <div class="quality" data-quality-group><span>Qualità Grafica</span><button data-q="low">Bassa</button><button data-q="medium">Media</button><button data-q="high">Alta</button></div>
         <button id="btn-start" class="btn primary">INIZIA MISSIONE</button>
       </div>
       <div class="menu-foot">
@@ -78,6 +88,7 @@
     <div class="modal">
       <h2>PAUSA</h2>
       <p>Il mouse è stato sbloccato.</p>
+      <div class="quality" data-quality-group><span>Qualità Grafica</span><button data-q="low">Bassa</button><button data-q="medium">Media</button><button data-q="high">Alta</button></div>
       <div class="modal-actions">
         <button id="btn-resume" class="btn primary">RIPRENDI</button>
         <button id="btn-pause-menu" class="btn">MENU PRINCIPALE</button>

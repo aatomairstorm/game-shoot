@@ -22,7 +22,7 @@ try {
   $('loading').innerHTML = '<p>Il tuo browser non supporta WebGL: impossibile avviare il gioco.</p>';
   throw err;
 }
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -56,11 +56,54 @@ G.enemies = new EnemyManager(G);
 G.projectiles = new Projectiles(G);
 const world = buildWorld(scene);
 
-G.onEnemyKilled = () => {
+G.onEnemyKilled = (e) => {
+  if (G.state !== 'playing') return;
+  if (e.kind === 'turret') { G.hud.toast(`Torretta distrutta — ne restano ${G.enemies.turretCount}`, 'good', 1500); return; }
   G.stats.kills++;
   const left = G.enemies.aliveCount;
-  if (G.state === 'playing') G.hud.toast(left > 0 ? `Bandito eliminato — ne restano ${left}` : 'Tutti i banditi eliminati!', 'good', 1500);
+  if (e.kind === 'boss') G.hud.toast(`${e.name} SCONFITTO!`, 'good', 2600);
+  else G.hud.toast(left > 0 ? `Bandito eliminato — ne restano ${left}` : 'Tutti i banditi eliminati!', 'good', 1500);
 };
+
+// ---------- Graphics quality ----------
+const QUALITY = {
+  low: { pr: 0.75, shadows: false, map: 512, fx: 0.45, far: 360 },
+  medium: { pr: 1.0, shadows: true, map: 1024, fx: 0.75, far: 520 },
+  high: { pr: 1.25, shadows: true, map: 2048, fx: 1, far: 700 },
+};
+let quality = 'medium';
+try { const q = localStorage.getItem('hs-quality'); if (QUALITY[q]) quality = q; } catch (e) { /* storage unavailable */ }
+
+function applyQuality(q) {
+  quality = q;
+  const Q = QUALITY[q];
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, Q.pr));
+  renderer.setSize(innerWidth, innerHeight);
+  const sun = world.sun;
+  if (renderer.shadowMap.enabled !== Q.shadows) {
+    renderer.shadowMap.enabled = Q.shadows;
+    // Materials must recompile when shadow support toggles.
+    scene.traverse((o) => {
+      if (!o.material) return;
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
+    });
+  }
+  sun.castShadow = Q.shadows;
+  const sc = sun.shadow.camera, ext = q === 'high' ? 70 : 48;
+  sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.updateProjectionMatrix();
+  if (sun.shadow.mapSize.x !== Q.map) {
+    sun.shadow.mapSize.set(Q.map, Q.map);
+    if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+  }
+  scene.fog.far = Q.far * 0.85;
+  camera.far = Q.far + 100;
+  camera.updateProjectionMatrix();
+  G.fx.quality = Q.fx;
+  document.querySelectorAll('[data-quality-group] button').forEach((b) => b.classList.toggle('on', b.dataset.q === q));
+  try { localStorage.setItem('hs-quality', q); } catch (e) { /* storage unavailable */ }
+}
+document.querySelectorAll('[data-quality-group] button').forEach((b) => b.addEventListener('click', () => { G.audio.init(); G.audio.ui(); applyQuality(b.dataset.q); }));
+applyQuality(quality);
 G.onPlayerDeath = () => {
   G.hud.toast('Sei stato sconfitto…', 'bad', 2000);
   G.audio.setThrust(0);
@@ -80,17 +123,17 @@ function resetEntities() {
 resetEntities();
 
 // ---------- Menu & hero cards ----------
+const PW = 192, PH = 224;
 const preview = (() => {
   const r = new THREE.WebGLRenderer({ alpha: true, antialias: true });
   r.setPixelRatio(1);
-  r.setSize(240, 280);
+  r.setSize(PW, PH);
   r.toneMapping = THREE.ACESFilmicToneMapping;
   const s = new THREE.Scene();
-  s.add(new THREE.HemisphereLight(0xdde8ff, 0x302820, 1.6));
+  s.add(new THREE.HemisphereLight(0xdde8ff, 0x403830, 2.0));
   const d = new THREE.DirectionalLight(0xffffff, 2.6); d.position.set(2, 3, -3); s.add(d);
-  const back = new THREE.DirectionalLight(0x88aaff, 1.5); back.position.set(-2, 2, 3); s.add(back);
-  const cam = new THREE.PerspectiveCamera(32, 240 / 280, 0.1, 50);
-  cam.position.set(0, 1.3, -4.4); cam.lookAt(0, 1.0, 0);
+  const cam = new THREE.PerspectiveCamera(32, PW / PH, 0.1, 50);
+  cam.position.set(0, 1.3, -4.6); cam.lookAt(0, 1.0, 0);
   const models = {};
   for (const id of Object.keys(HEROES)) {
     const m = createHero(id);
@@ -99,11 +142,14 @@ const preview = (() => {
       m.handR.add(h); h.rotation.set(Math.PI, 0, 0);
     }
     if (id === 'iron') { for (const f of m.flames) f.visible = true; m.armL.rotation.z = -0.25; m.armR.rotation.z = 0.25; }
+    if (id === 'ben') { m.armL.rotation.set(-1.2, 0, 0.3); }
+    if (id === 'lucia') { m.armR.rotation.set(2.3, 0, 0.35); }
+    if (id === 'fia') { m.armR.rotation.set(-0.3, 0, 0.5); }
     m.root.visible = false;
     s.add(m.root);
     models[id] = m;
   }
-  return { r, s, cam, models, ctx: {} };
+  return { r, s, cam, models, ctx: {}, frame: 0 };
 })();
 
 function buildMenu() {
@@ -119,7 +165,7 @@ function buildMenu() {
     card.innerHTML = `
       <span class="sel-badge">SELEZIONATO</span>
       <div class="hero-top">
-        <canvas class="hero-preview" width="240" height="280"></canvas>
+        <canvas class="hero-preview" width="${PW}" height="${PH}"></canvas>
         <div><div class="hero-name">${h.name}</div><div class="hero-tag">${h.tagline}</div>
         <div class="hero-stats">${stats}<div class="stat"><span>Vita</span><div class="stat-bar"><i style="width:${(h.hp / 150) * 100}%"></i></div></div></div></div>
       </div>
@@ -138,17 +184,21 @@ function buildMenu() {
 buildMenu();
 
 function renderPreviews(t) {
+  // Six previews: refresh at half rate to keep the menu light.
+  if ((preview.frame++ & 1) === 1) return;
   for (const id of Object.keys(preview.models)) {
     const m = preview.models[id];
     for (const k of Object.keys(preview.models)) preview.models[k].root.visible = k === id;
     const sel = id === G.heroId;
     m.root.rotation.y = Math.sin(t * 0.7) * 0.6 + (sel ? t * 0.9 : 0);
     m.body.position.y = Math.sin(t * 2) * 0.03;
-    if (id === 'thor') m.cape.rotation.x = -0.15 + Math.sin(t * 3) * 0.05;
+    if (m.cape) m.cape.rotation.x = -0.15 + Math.sin(t * 3) * 0.05;
     if (id === 'iron') for (const f of m.flames) f.scale.y = 0.6 + Math.random() * 0.3;
+    if (m.halo) m.halo.rotation.z = t;
+    if (m.tails) m.tails.forEach((tl, i) => (tl.rotation.z = (i ? -1 : 1) * 0.12 + Math.sin(t * 3 + i) * 0.08));
     preview.r.render(preview.s, preview.cam);
     const ctx = preview.ctx[id];
-    ctx.clearRect(0, 0, 240, 280);
+    ctx.clearRect(0, 0, PW, PH);
     ctx.drawImage(preview.r.domElement, 0, 0);
   }
 }
@@ -365,12 +415,47 @@ function updateHostageInteraction(dt) {
 function updateHUD(dt) {
   const pl = G.player, hud = G.hud;
   hud.setHP(pl.hp, pl.maxHp);
-  hud.setCounts(G.saved, G.hostages.length, G.enemies.aliveCount);
+  hud.setCounts(G.saved, G.hostages.length, G.enemies.aliveCount, G.enemies.turretCount);
+  let boss = null, bd = 55;
+  for (const b of G.enemies.bosses) {
+    if (!b.alive) continue;
+    const d = b.pos.distanceTo(pl.pos);
+    if (d < bd) { bd = d; boss = b; }
+  }
+  hud.setBoss(boss);
   hud.setPowers(pl.kit.hud());
   hud.setStatus(pl.kit.status());
   hud.setCrosshair(G.aim.enemy ? 'enemy' : pl.kit.crosshair());
   hud.update(dt, Math.hypot(pl.vel.x, pl.vel.z));
   hud.updateMarkers(G.hostages, camera, pl.pos);
+}
+
+// Blinking laser gates: touching an active beam burns and knocks the player back.
+let laserHurtT = 0;
+function updateLaserTraps(dt) {
+  const pl = G.player;
+  laserHurtT -= dt;
+  for (const L of world.laserTraps) {
+    const ph = (G.time + L.offset) % L.period;
+    const on = ph < L.period * 0.62;
+    if (on !== L.on) { L.on = on; for (const b of L.beams) b.visible = on; }
+    if (!on || pl.dead || pl.pos.y > 1.9) continue;
+    // Distance from the player to the beam segment (2D)
+    const ax = L.a.x, az = L.a.y, bx = L.b.x, bz = L.b.y;
+    const vx = bx - ax, vz = bz - az;
+    const t = Math.max(0, Math.min(1, ((pl.pos.x - ax) * vx + (pl.pos.z - az) * vz) / (vx * vx + vz * vz)));
+    const dx = pl.pos.x - (ax + vx * t), dz = pl.pos.z - (az + vz * t);
+    const d = Math.hypot(dx, dz);
+    if (d < pl.radius + 0.1 && laserHurtT <= 0) {
+      laserHurtT = 0.5;
+      pl.takeDamage(14, pl.pos);
+      const n = d > 1e-3 ? 1 / d : 1;
+      pl.vel.x = dx * n * 9; pl.vel.z = dz * n * 9; pl.vel.y = Math.max(pl.vel.y, 5); pl.onGround = false;
+      G.fx.sparks(_v.set(pl.pos.x, pl.pos.y + 1, pl.pos.z), 0xff4050, 14, 6);
+      G.audio.laserZap();
+      G.hud.toast('Barriera laser!', 'bad', 900);
+    }
+  }
 }
 
 function updatePlaying(dt) {
@@ -383,6 +468,7 @@ function updatePlaying(dt) {
   G.enemies.update(dt, true);
   G.projectiles.update(dt);
   updateHazards(dt);
+  updateLaserTraps(dt);
   for (const h of G.hostages) h.update(dt);
   updateHostageInteraction(dt);
   updateCamera(dt);
@@ -398,7 +484,7 @@ function updatePlaying(dt) {
 
 function updateMenu(dt) {
   const a = G.time * 0.05;
-  camera.position.set(Math.cos(a) * 105, 48 + Math.sin(G.time * 0.2) * 6, Math.sin(a) * 105);
+  camera.position.set(Math.cos(a) * 140, 62 + Math.sin(G.time * 0.2) * 6, Math.sin(a) * 140);
   camera.lookAt(0, 6, 0);
   if (camera.fov !== 60) { camera.fov = 60; camera.updateProjectionMatrix(); }
   G.enemies.update(dt, false);
@@ -409,6 +495,8 @@ function updateMenu(dt) {
 
 // ---------- Main loop ----------
 let last = performance.now();
+const fpsEl = $('fps');
+let fpsFrames = 0, fpsT = last;
 let firstFrame = true;
 function frame(now) {
   requestAnimationFrame(frame);
@@ -442,6 +530,14 @@ function frame(now) {
   G.input.endFrame();
 
   if (firstFrame) { firstFrame = false; $('loading').classList.add('hidden'); }
+
+  fpsFrames++;
+  if (now - fpsT >= 500) {
+    const fps = Math.round((fpsFrames * 1000) / (now - fpsT));
+    fpsEl.textContent = `${fps} FPS`;
+    fpsEl.className = fps >= 55 ? '' : fps >= 35 ? 'mid' : 'low';
+    fpsFrames = 0; fpsT = now;
+  }
 }
 requestAnimationFrame(frame);
 

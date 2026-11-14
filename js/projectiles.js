@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { raycastWorld } from './collision.js';
 
+const _look = new THREE.Vector3();
+const dir = new THREE.Vector3();
+
 // Generic player projectiles (webs, stink bombs).
 export class Projectiles {
   constructor(G) {
@@ -21,11 +24,20 @@ export class Projectiles {
 
   update(dt) {
     const G = this.G;
-    const dir = new THREE.Vector3();
     for (let i = this.list.length - 1; i >= 0; i--) {
       const p = this.list[i];
       p.life -= dt;
       p.vel.y -= p.gravity * dt;
+      if (p.homing && p.target) {
+        if (p.target.alive) {
+          const t = p.target;
+          const ty = t.head && t.headR > 0 ? (t.pos.y + t.head.y) * 0.5 + 0.2 : t.pos.y + 0.8;
+          dir.set(t.pos.x - p.pos.x, ty - p.pos.y, t.pos.z - p.pos.z).normalize();
+          const sp = p.vel.length();
+          p.vel.lerp(dir.multiplyScalar(sp), Math.min(1, p.homing * dt)).setLength(sp);
+        } else p.target = null;
+      }
+      if (p.mesh && p.align) p.mesh.lookAt(_look.copy(p.pos).add(p.vel));
       dir.copy(p.vel).multiplyScalar(dt);
       const len = dir.length();
       if (len > 1e-6) {
